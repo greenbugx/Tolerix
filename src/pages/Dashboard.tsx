@@ -18,8 +18,6 @@ import {
   Menu,
   X,
   FileUp,
-  Sparkles,
-  RefreshCw,
   Check,
   RotateCcw,
   Trash2,
@@ -109,25 +107,20 @@ export default function Dashboard() {
   const [currentAuditRun, setCurrentAuditRun] = useState<AuditRun | null>(null)
   const [currentFindings, setCurrentFindings] = useState<Finding[]>([])
 
-  const [jobNameInput, setJobNameInput] = useState('Custom Name Tag')
-  const [customerNameInput, setCustomerNameInput] = useState('Maple & Co.')
-  const [jobText, setJobText] = useState(
-    'Please make 10 acrylic tags, 120 by 80 mm, using 3 mm clear acrylic. Cut the outside and engrave the name on the front.'
-  )
-  const [manualWidth, setManualWidth] = useState(120)
-  const [manualHeight, setManualHeight] = useState(80)
-  const [manualQty, setManualQty] = useState(10)
-  const [manualMaterial, setManualMaterial] = useState('3 mm clear acrylic')
-  const [manualThickness, setManualThickness] = useState(3)
-  const [manualOperations, setManualOperations] = useState('Cut outer contour, engrave front')
+  const [jobNameInput, setJobNameInput] = useState('')
+  const [customerNameInput, setCustomerNameInput] = useState('')
+  const [jobText, setJobText] = useState('')
+  const [manualWidth, setManualWidth] = useState(0)
+  const [manualHeight, setManualHeight] = useState(0)
+  const [manualQty, setManualQty] = useState(1)
+  const [manualMaterial, setManualMaterial] = useState('')
+  const [manualThickness, setManualThickness] = useState(0)
+  const [manualOperations, setManualOperations] = useState('')
 
   const [isDragging, setIsDragging] = useState(false)
-  const [uploadedFileName, setUploadedFileName] = useState('name_tag_v2.svg')
+  const [uploadedFileName, setUploadedFileName] = useState('')
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-
-  const [modalOpen, setModalOpen] = useState(false)
-  const [demoState, setDemoState] = useState<'input' | 'analyzing' | 'report'>('input')
 
   const navItems = [
     { name: 'Dashboard' as const, icon: Home },
@@ -208,13 +201,30 @@ export default function Dashboard() {
     setIsCreatingJob(true)
     setCreateStep(1)
     setUploadError(null)
+    setJobNameInput('')
+    setCustomerNameInput('')
+    setJobText('')
+    setUploadedFileName('')
+    setManualWidth(0)
+    setManualHeight(0)
+    setManualQty(1)
+    setManualMaterial('')
+    setManualThickness(0)
+    setManualOperations('')
+    setCurrentJob(null)
+    setCurrentSpec(null)
+    setCurrentFile(null)
+    setCurrentAuditRun(null)
+    setCurrentFindings([])
   }
 
   const handleCreateStep1Submit = async () => {
     const selectedModelId = selectedModel === 'Gemma 4B' ? 'gemma-4b' : 'gemma-2b'
+    const jobName = jobNameInput.trim() || 'Untitled Job'
+    const customerName = customerNameInput.trim() || 'Direct Customer'
     const newJob = await jobService.createJobWithInstructions({
-      name: jobNameInput,
-      customerName: customerNameInput,
+      name: jobName,
+      customerName: customerName,
       instructions: jobText,
       selectedModelId
     })
@@ -223,13 +233,18 @@ export default function Dashboard() {
     const spec: JobSpecification = {
       id: `spec-${newJob.id}`,
       jobId: newJob.id,
-      quantity: manualQty || extracted.quantity || 10,
-      width: manualWidth || extracted.width || 120,
-      height: manualHeight || extracted.height || 80,
+      quantity: manualQty || extracted.quantity || 1,
+      width: manualWidth || extracted.width || 0,
+      height: manualHeight || extracted.height || 0,
       units: extracted.units || 'mm',
       material: manualMaterial || extracted.material || 'acrylic',
-      thickness: manualThickness || extracted.thickness || 3,
-      operations: extracted.operations.length > 0 ? extracted.operations : ['cut', 'engrave'],
+      thickness: manualThickness || extracted.thickness || 0,
+      operations:
+        manualOperations
+          ? manualOperations.split(',').map((s) => s.trim()).filter(Boolean)
+          : extracted.operations.length > 0
+            ? extracted.operations
+            : ['cut'],
       expectedCutLayers: extracted.expectedCutLayers,
       expectedEngraveLayers: extracted.expectedEngraveLayers,
       tolerances: { width: 0.5, height: 0.5 },
@@ -237,7 +252,6 @@ export default function Dashboard() {
       sourceExcerpts: extracted.sourceExcerpts,
       updatedAt: Date.now()
     }
-
     await jobRepository.upsertSpecification(spec)
 
     setCurrentJob(newJob)
@@ -386,22 +400,6 @@ export default function Dashboard() {
   const handleCopySha = () => {
     setCopiedSha(true)
     setTimeout(() => setCopiedSha(false), 2000)
-  }
-
-  const handleOpenExample = () => {
-    setDemoState('report')
-    setModalOpen(true)
-  }
-
-  const handleRunAudit = () => {
-    setDemoState('analyzing')
-    setTimeout(() => {
-      setDemoState('report')
-    }, 850)
-  }
-
-  const handleResetDemo = () => {
-    setDemoState('input')
   }
 
   return (
@@ -960,19 +958,21 @@ export default function Dashboard() {
                     <div>
                       <div className="flex items-center gap-3 mb-1">
                         <h1 className="text-2xl font-bold text-[#09131e]">
-                          {currentJob?.name || 'Custom Name Tag'}
+                          {currentJob?.name || 'Preflight Audit'}
                         </h1>
                         <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-                          Needs Review
+                          {currentJob?.status === 'ready' ? 'Ready' : 'Needs Review'}
                         </span>
-                        <span className="text-xs text-[#78716c] font-mono">
-                          Ref: {currentJob?.id.slice(0, 10) || 'JOB-1042'}
-                        </span>
+                        {currentJob && (
+                          <span className="text-xs text-[#78716c] font-mono">
+                            Ref: {currentJob.id.slice(0, 10)}
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-[#57534e]">
-                        <div>Client: <span className="font-medium text-[#09131e]">{currentJob?.customerName || 'Maple & Co.'}</span></div>
-                        <div>Created: <span className="font-medium text-[#09131e]">12 Nov 2024, 10:24 AM</span></div>
-                        <div>Machine Profile: <span className="font-medium text-[#09131e]">Thunder Laser Nova 35</span></div>
+                        <div>Client: <span className="font-medium text-[#09131e]">{currentJob?.customerName || 'Direct Customer'}</span></div>
+                        <div>Created: <span className="font-medium text-[#09131e]">{currentJob ? new Date(currentJob.createdAt).toLocaleDateString() : 'Today'}</span></div>
+                        <div>Machine Profile: <span className="font-medium text-[#09131e]">{machineProfiles.find((p) => p.id === currentJob?.selectedMachineProfileId)?.name || machineProfiles[0]?.name || 'Standard Laser'}</span></div>
                         <div>Version: <span className="font-medium text-[#09131e]">v1</span></div>
                       </div>
                     </div>
@@ -1079,7 +1079,7 @@ export default function Dashboard() {
                           <div className="pt-2 border-t border-[#f0e8de]">
                             <span className="text-[#78716c] block mb-1">Client Notes</span>
                             <p className="text-[#57534e] leading-relaxed text-[11px] bg-[#faf7f3] p-2.5 rounded-xl border border-[#e5dcd3]">
-                              {currentJob?.originalInstructions || 'Make 10 acrylic tags, 120 by 80 mm, clear acrylic, cut the outside and engrave the name on the front.'}
+                              {currentJob?.originalInstructions || 'No client notes provided.'}
                             </p>
                           </div>
                         </div>
@@ -1503,19 +1503,19 @@ export default function Dashboard() {
                         <div className="space-y-2 text-xs">
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Job Name</span>
-                            <span className="font-medium text-[#09131e]">{currentJob?.name || 'Custom Name Tag'}</span>
+                            <span className="font-medium text-[#09131e]">{currentJob?.name || 'Untitled Job'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Client</span>
-                            <span className="font-medium text-[#09131e]">{currentJob?.customerName || 'Maple & Co.'}</span>
+                            <span className="font-medium text-[#09131e]">{currentJob?.customerName || 'Direct Customer'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Quantity</span>
-                            <span className="font-medium text-[#09131e]">{currentSpec?.quantity || 10} pieces</span>
+                            <span className="font-medium text-[#09131e]">{currentSpec?.quantity || 1} pieces</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Due Date</span>
-                            <span className="font-medium text-[#09131e]">Oct 20, 2026</span>
+                            <span className="font-medium text-[#09131e]">{currentJob?.dueDate || 'Standard Queue'}</span>
                           </div>
                         </div>
                       </div>
@@ -1531,18 +1531,24 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#faf7f3] border border-[#e5dcd3]">
                           <img src={dash1Img} alt="" className="w-10 h-10 rounded-lg object-cover border border-[#e5dcd3] bg-white p-0.5 shrink-0" />
                           <div>
-                            <p className="text-xs font-semibold text-[#09131e]">{uploadedFileName}</p>
-                            <p className="text-[10px] text-[#78716c]">1.2 MB · Vector Drawing</p>
+                            <p className="text-xs font-semibold text-[#09131e]">{uploadedFileName || 'No file selected'}</p>
+                            <p className="text-[10px] text-[#78716c]">
+                              {currentFile ? `${(currentFile.fileSize / 1024).toFixed(1)} KB · Vector Drawing` : 'Vector Drawing'}
+                            </p>
                           </div>
                         </div>
                         <div className="space-y-1.5 text-xs">
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Dimensions</span>
-                            <span className="font-medium text-[#09131e]">{currentSpec?.width || 120} x {currentSpec?.height || 80} mm</span>
+                            <span className="font-medium text-[#09131e]">
+                              {currentSpec ? `${currentSpec.width} x ${currentSpec.height} ${currentSpec.units}` : '0 x 0 mm'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-[#78716c]">Material Thickness</span>
-                            <span className="font-medium text-[#09131e]">{currentSpec?.thickness || 3} mm</span>
+                            <span className="font-medium text-[#09131e]">
+                              {currentSpec ? `${currentSpec.thickness} mm` : '0 mm'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1559,12 +1565,17 @@ export default function Dashboard() {
                           <div className="w-12 h-10 rounded-lg bg-stone-900 text-white flex items-center justify-center shrink-0 font-mono text-[10px]">
                             LASER
                           </div>
-                          <div>
-                            <p className="text-xs font-semibold text-[#09131e]">Thunder Laser Nova 35</p>
-                            <p className="text-[10px] text-[#78716c]">Bed Size: 600 x 900 mm</p>
-                            <p className="text-[10px] text-[#78716c]">Max Material Thickness: 10 mm</p>
-                            <p className="text-[10px] text-[#78716c]">Cutting Method: CO2 Laser</p>
-                          </div>
+                          {(() => {
+                            const prof = machineProfiles.find((p) => p.id === currentJob?.selectedMachineProfileId) || machineProfiles[0]
+                            return (
+                              <div>
+                                <p className="text-xs font-semibold text-[#09131e]">{prof?.name || 'Default Profile'}</p>
+                                <p className="text-[10px] text-[#78716c]">Bed Size: {prof?.bedWidth || 0} x {prof?.bedHeight || 0} mm</p>
+                                <p className="text-[10px] text-[#78716c]">Max Material Thickness: {prof?.maxThickness || 0} mm</p>
+                                <p className="text-[10px] text-[#78716c]">Cutting Method: {prof?.machineType || 'CO2 Laser'}</p>
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
 
@@ -1661,7 +1672,14 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f7f2eb]">
-                      {jobsList.map((job) => (
+                      {jobsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-12 text-center text-xs text-[#78716c]">
+                            No jobs created yet. Click "New Job" to begin preflight inspection.
+                          </td>
+                        </tr>
+                      ) :
+                        jobsList.map((job) => (
                         <tr key={job.id} className="group hover:bg-[#faf7f3] transition-colors">
                           <td className="py-3 pr-4">
                             <div className="flex items-center gap-3">
@@ -1888,38 +1906,44 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-3">
-                {jobsList.map((job) => (
-                  <div key={job.id} className="p-4 rounded-2xl bg-white border border-[#e5dcd3] flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-semibold text-[#09131e]">{job.name}</h4>
-                      <p className="text-xs text-[#78716c]">Client: {job.customerName} · Last audited: {new Date(job.updatedAt).toLocaleDateString()}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
-                          const bundle = await jobService.getFullReportBundle(job.id)
-                          const html = generateHtmlReport(bundle)
-                          triggerDownload(html, `${job.name}-report.html`, 'text/html')
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl border border-[#d8cec2] bg-white text-xs font-medium text-[#09131e] hover:bg-[#faf7f3] flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        <FileDown className="w-3.5 h-3.5" />
-                        <span>HTML Report</span>
-                      </button>
-                      <button
-                        onClick={async () => {
-                          const bundle = await jobService.getFullReportBundle(job.id)
-                          const json = generateJsonReport(bundle)
-                          triggerDownload(json, `${job.name}-report.json`, 'application/json')
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-[#071827] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>JSON Data</span>
-                      </button>
-                    </div>
+                {jobsList.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-[#78716c] bg-[#faf7f3] rounded-2xl border border-dashed border-[#e5dcd3]">
+                    No audit reports generated yet. Complete a preflight audit to view and export reports.
                   </div>
-                ))}
+                ) : (
+                  jobsList.map((job) => (
+                    <div key={job.id} className="p-4 rounded-2xl bg-white border border-[#e5dcd3] flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#09131e]">{job.name}</h4>
+                        <p className="text-xs text-[#78716c]">Client: {job.customerName} · Last audited: {new Date(job.updatedAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            const bundle = await jobService.getFullReportBundle(job.id)
+                            const html = generateHtmlReport(bundle)
+                            triggerDownload(html, `${job.name}-report.html`, 'text/html')
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl border border-[#d8cec2] bg-white text-xs font-medium text-[#09131e] hover:bg-[#faf7f3] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                          <span>HTML Report</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const bundle = await jobService.getFullReportBundle(job.id)
+                            const json = generateJsonReport(bundle)
+                            triggerDownload(json, `${job.name}-report.json`, 'application/json')
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#071827] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>JSON Data</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
           ) : (
@@ -1944,12 +1968,6 @@ export default function Dashboard() {
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Create New Job</span>
-                    </button>
-                    <button
-                      onClick={handleOpenExample}
-                      className="rounded-xl border border-[#d8cec2] bg-white/80 hover:bg-white text-[#09131e] text-xs sm:text-sm font-medium px-4 py-2 transition-all shadow-sm active:scale-95 cursor-pointer"
-                    >
-                      View Example
                     </button>
                   </div>
                 </div>
@@ -2034,7 +2052,14 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f7f2eb]">
-                      {jobsList.slice(0, 5).map((job) => (
+                      {jobsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-xs text-[#78716c]">
+                            No recent jobs found. Click "Create New Job" to begin.
+                          </td>
+                        </tr>
+                      ) :
+                        jobsList.slice(0, 5).map((job) => (
                         <tr key={job.id} className="group hover:bg-[#faf7f3] transition-colors">
                           <td className="py-2.5 pr-4">
                             <div className="flex items-center gap-3">
@@ -2114,149 +2139,6 @@ export default function Dashboard() {
           )}
         </main>
       </div>
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="fixed inset-0 bg-[#09131e]/60 backdrop-blur-sm" onClick={() => setModalOpen(false)} />
-
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-[#e5dcd3] overflow-hidden z-10 max-h-[90vh] flex flex-col">
-            <div className="px-6 sm:px-8 py-5 border-b border-[#f0e8de] flex items-center justify-between bg-[#faf7f3]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#c28b55]/15 flex items-center justify-center text-[#b87d4b]">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-[#09131e] text-base sm:text-lg">Tolerix Preflight Check</h3>
-                  <p className="text-xs text-[#78716c]">Order-to-vector manufacturing audit</p>
-                </div>
-              </div>
-              <button onClick={() => setModalOpen(false)} className="text-[#78716c] hover:text-[#09131e] p-1.5 rounded-full hover:bg-[#eee6dc] transition-colors cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 sm:p-8 overflow-y-auto space-y-6">
-              {demoState === 'input' && (
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#78716c] mb-2">
-                      Customer Instructions
-                    </label>
-                    <textarea
-                      value={jobText}
-                      onChange={(e) => setJobText(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-xl border border-[#e2d7cb] p-3.5 text-sm text-[#1c1917] focus:outline-none focus:ring-2 focus:ring-[#c28b55]/40 bg-[#faf7f4]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#78716c] mb-2">
-                      Production File (SVG)
-                    </label>
-                    <div className="border-2 border-dashed border-[#e2d7cb] rounded-xl p-5 text-center bg-[#faf7f4] flex flex-col items-center justify-center">
-                      <FileUp className="w-8 h-8 text-[#b87d4b] mb-2" />
-                      <p className="text-sm font-medium text-[#1c1917]">name_tag_v2.svg</p>
-                      <p className="text-xs text-[#78716c] mt-0.5">Ready for deterministic bounds check</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-[#faf7f3] border border-[#eee4d9] p-4 text-xs space-y-1.5">
-                    <p className="font-semibold text-[#44403c] uppercase tracking-wide">Extracted Target Fields</p>
-                    <div className="grid grid-cols-2 gap-2 text-[#57534e]">
-                      <div>Expected Qty: <span className="font-medium text-[#1c1917]">10</span></div>
-                      <div>Expected Size: <span className="font-medium text-[#1c1917]">120 x 80 mm</span></div>
-                      <div>Material: <span className="font-medium text-[#1c1917]">3 mm clear acrylic</span></div>
-                      <div>Operations: <span className="font-medium text-[#1c1917]">Cut contour, Engrave</span></div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end gap-3">
-                    <button onClick={() => setModalOpen(false)} className="px-5 py-2.5 rounded-full text-sm font-medium text-[#57534e] hover:bg-[#f5ede4] transition-colors cursor-pointer">
-                      Cancel
-                    </button>
-                    <button onClick={handleRunAudit} className="px-6 py-2.5 rounded-full bg-[#071827] text-white text-sm font-medium hover:bg-[#0d2a45] transition-all flex items-center gap-2 shadow-sm cursor-pointer">
-                      <span>Run Preflight Audit</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {demoState === 'analyzing' && (
-                <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-                  <div className="w-12 h-12 rounded-full border-3 border-[#c28b55]/30 border-t-[#b87d4b] animate-spin" />
-                  <p className="text-sm font-medium text-[#1c1917]">Measuring vector bounds and comparing order specifications...</p>
-                  <p className="text-xs text-[#78716c]">Running deterministic geometry engine against SVG path tree</p>
-                </div>
-              )}
-
-              {demoState === 'report' && (
-                <div className="space-y-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#f0e8de]">
-                    <div>
-                      <span className="text-xs uppercase tracking-wider font-semibold text-[#b87d4b]">Audit Summary</span>
-                      <h4 className="text-lg font-medium text-[#09131e]">2 Discrepancies Flagged</h4>
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Requires Operator Approval
-                    </span>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="p-4 rounded-xl bg-red-50/70 border border-red-200/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-red-900">Dimensional Mismatch (High Severity)</p>
-                        <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">High</span>
-                      </div>
-                      <p className="text-xs text-red-800">
-                        Order requested width: 120 mm. Measured geometry width in SVG: 100.2 mm. Discrepancy exceeds tolerance.
-                      </p>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-amber-900">Missing Operation Layer (Medium Severity)</p>
-                        <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Medium</span>
-                      </div>
-                      <p className="text-xs text-amber-800">
-                        Requested engraving layer not distinguished by stroke color or layer name in uploaded SVG file.
-                      </p>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-stone-800">Material Thickness Unverified</p>
-                        <span className="text-xs font-semibold text-stone-600 bg-stone-200 px-2 py-0.5 rounded-full">Unverified</span>
-                      </div>
-                      <p className="text-xs text-stone-600">
-                        Material (3 mm acrylic) cannot be inferred from vector contours. Verify machine stock before cutting.
-                      </p>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center gap-3">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <p className="text-xs text-emerald-800">
-                        SVG structure valid: all outer paths closed, zero self-intersections or degenerate paths.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex items-center justify-between">
-                    <button onClick={handleResetDemo} className="px-4 py-2 rounded-full text-xs font-medium text-[#57534e] hover:bg-[#f5ede4] transition-colors flex items-center gap-1.5 cursor-pointer">
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Test Another File</span>
-                    </button>
-                    <button onClick={() => setModalOpen(false)} className="px-6 py-2.5 rounded-full bg-[#071827] text-white text-sm font-medium hover:bg-[#0d2a45] transition-all cursor-pointer">
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
