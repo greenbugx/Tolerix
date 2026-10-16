@@ -52,6 +52,24 @@ Tolerix implements an operator-governed 4-step creation pipeline followed by ana
 - Distinguishes SVG canvas viewport tags from actual transformed path bounds.
 - Unverified parameter handling: Material composition, physical sheet thickness, and machine hardware safety cannot be deduced from 2D vector coordinates and are strictly marked unverified.
 
+## Verified Capabilities vs Remaining Limitations
+
+### Verified Capabilities
+
+- **Deterministic Vector Inspection:** Exact mathematical bounding box evaluation for cubic and quadratic Bézier curve extrema, elliptical arcs, and linear segments.
+- **Transform Accumulation:** Cumulative 2D affine transform matrices handling nested groups, arbitrary scaling, rotation, translation, and non-zero viewBox offsets.
+- **True Geometry Duplicate Detection:** Normalized point-by-point path coordinate comparison avoiding false positives from identical bounding boxes or reversal artifacts.
+- **Strict SVG Security Barrier:** Complete denial of external network references, script schemes, inline DOM event handlers, and XXE declarations.
+- **Persistent Local Storage:** IndexedDB storage with Dexie across jobs, files, profiles, specifications, and preflight audit runs with zero external telemetry.
+- **Model Integrity & Lifecycle:** Cache Storage management with verified byte checks, download cancellation, and rejection of unknown model identifiers.
+- **Clean Report Generation:** Context-aware HTML escaping across all dynamic attributes, preventing script execution during report printing.
+
+### Remaining Limitations
+
+- **Hardware Constraints for WebGPU:** On-device AI inference requires compatible hardware with WebGPU support and sufficient dedicated or unified memory (minimum 4 GB for Gemma 2B, 6 GB+ for Gemma 4B).
+- **DXF Scope:** DXF ingestion supports basic planar contour analysis. Advanced 3D solids and proprietary block hierarchies are not parsed.
+- **Non-Vector Verification:** Physical sheet thickness, material composition, and kerf tolerances cannot be deduced from drawing coordinates alone and require operator confirmation.
+- **System Font Dependencies:** Unconverted SVG text elements rely on client font availability. Laser fabrication workflows should convert text to paths prior to upload.
 ## Development & Testing
 
 ### Installation

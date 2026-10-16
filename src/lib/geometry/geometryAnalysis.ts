@@ -13,6 +13,7 @@ export interface GeometryAnalysisResult {
   totalPaths: number
   cutPathsCount: number
   engravePathsCount: number
+  ambiguousPathsCount: number
   openCutPathsCount: number
   zeroLengthPathsCount: number
   duplicatePathsCount: number
@@ -20,29 +21,88 @@ export interface GeometryAnalysisResult {
   isCanvasMatchingBounds: boolean
 }
 
-function isCutPath(path: ParsedPath): boolean {
-  const layer = path.layerName.toLowerCase()
-  const stroke = path.stroke.toLowerCase()
-  if (layer.includes('cut') || layer.includes('outside') || layer.includes('contour')) {
-    return true
-  }
-  if (stroke === 'red' || stroke === '#f00' || stroke === '#ff0000' || stroke.includes('239, 68, 68')) {
-    return true
-  }
-  return false
-}
+export type PathOperationKind = 'cut' | 'engrave' | 'ambiguous'
 
-function isEngravePath(path: ParsedPath): boolean {
+export function classifyPathOperation(path: ParsedPath): PathOperationKind {
   const layer = path.layerName.toLowerCase()
   const stroke = path.stroke.toLowerCase()
   const fill = path.fill.toLowerCase()
-  if (layer.includes('engrave') || layer.includes('etch') || layer.includes('text')) {
-    return true
+
+  const hasCutLayer =
+    layer.includes('cut') ||
+    layer.includes('outside') ||
+    layer.includes('contour') ||
+    layer.includes('through')
+  const hasCutStroke =
+    stroke === 'red' ||
+    stroke === '#f00' ||
+    stroke === '#ff0000' ||
+    stroke.includes('239, 68, 68') ||
+    stroke.includes('255, 0, 0')
+
+  const hasEngraveLayer =
+    layer.includes('engrave') ||
+    layer.includes('etch') ||
+    layer.includes('score') ||
+    layer.includes('text') ||
+    layer.includes('raster')
+  const hasEngraveFill = fill !== 'none' && fill !== 'transparent' && fill !== ''
+  const hasEngraveStroke =
+    stroke === 'black' ||
+    stroke === '#000' ||
+    stroke === '#000000' ||
+    stroke.includes('30, 41, 59') ||
+    stroke.includes('0, 0, 0')
+
+  if (hasCutLayer || (hasCutStroke && !hasEngraveFill)) {
+    return 'cut'
   }
-  if (fill !== 'none' || stroke === 'black' || stroke === '#000' || stroke === '#000000' || stroke.includes('30, 41, 59')) {
-    return true
+
+  if (hasEngraveLayer || hasEngraveFill || (hasEngraveStroke && !hasCutStroke)) {
+    return 'engrave'
   }
-  return false
+
+  return 'ambiguous'
+}
+
+function arePathsDuplicate(p1: ParsedPath, p2: ParsedPath): boolean {
+  const dx1 = Math.abs(p1.boundsMm.minX - p2.boundsMm.minX)
+  const dy1 = Math.abs(p1.boundsMm.minY - p2.boundsMm.minY)
+  const dx2 = Math.abs(p1.boundsMm.maxX - p2.boundsMm.maxX)
+  const dy2 = Math.abs(p1.boundsMm.maxY - p2.boundsMm.maxY)
+
+  if (dx1 > 0.05 || dy1 > 0.05 || dx2 > 0.05 || dy2 > 0.05) {
+    return false
+  }
+
+  const n = p1.normalizedPoints.length
+  if (n === 0 || n !== p2.normalizedPoints.length) {
+    return false
+  }
+
+  let matchForward = true
+  for (let i = 0; i < n; i++) {
+    const pt1 = p1.normalizedPoints[i]
+    const pt2 = p2.normalizedPoints[i]
+    if (Math.abs(pt1.x - pt2.x) > 0.05 || Math.abs(pt1.y - pt2.y) > 0.05) {
+      matchForward = false
+      break
+    }
+  }
+
+  if (matchForward) return true
+
+  let matchReverse = true
+  for (let i = 0; i < n; i++) {
+    const pt1 = p1.normalizedPoints[i]
+    const pt2 = p2.normalizedPoints[n - 1 - i]
+    if (Math.abs(pt1.x - pt2.x) > 0.05 || Math.abs(pt1.y - pt2.y) > 0.05) {
+      matchReverse = false
+      break
+    }
+  }
+
+  return matchReverse
 }
 
 export function analyzeSvgGeometry(svgText: string): GeometryAnalysisResult {
@@ -56,6 +116,7 @@ export function analyzeSvgGeometry(svgText: string): GeometryAnalysisResult {
 
   let cutCount = 0
   let engraveCount = 0
+  let ambiguousCount = 0
   let openCutCount = 0
   let zeroLengthCount = 0
   const layerSet = new Set<string>()
@@ -73,35 +134,23 @@ export function analyzeSvgGeometry(svgText: string): GeometryAnalysisResult {
     maxX = Math.max(maxX, path.boundsMm.maxX)
     maxY = Math.max(maxY, path.boundsMm.maxY)
 
-    const isCut = isCutPath(path)
-    const isEngrave = isEngravePath(path)
-
-    if (isCut) {
+    const opKind = classifyPathOperation(path)
+    if (opKind === 'cut') {
       cutCount++
       if (!path.isClosed) {
         openCutCount++
       }
-    } else if (isEngrave) {
+    } else if (opKind === 'engrave') {
       engraveCount++
     } else {
-      cutCount++
-      if (!path.isClosed) {
-        openCutCount++
-      }
+      ambiguousCount++
     }
   }
 
   let duplicateCount = 0
   for (let i = 0; i < paths.length; i++) {
     for (let j = i + 1; j < paths.length; j++) {
-      const p1 = paths[i]
-      const p2 = paths[j]
-      const dx1 = Math.abs(p1.boundsMm.minX - p2.boundsMm.minX)
-      const dy1 = Math.abs(p1.boundsMm.minY - p2.boundsMm.minY)
-      const dx2 = Math.abs(p1.boundsMm.maxX - p2.boundsMm.maxX)
-      const dy2 = Math.abs(p1.boundsMm.maxY - p2.boundsMm.maxY)
-
-      if (dx1 < 0.05 && dy1 < 0.05 && dx2 < 0.05 && dy2 < 0.05 && p1.pointsCount === p2.pointsCount) {
+      if (arePathsDuplicate(paths[i], paths[j])) {
         duplicateCount++
       }
     }
@@ -131,6 +180,7 @@ export function analyzeSvgGeometry(svgText: string): GeometryAnalysisResult {
     totalPaths: paths.length,
     cutPathsCount: cutCount,
     engravePathsCount: engraveCount,
+    ambiguousPathsCount: ambiguousCount,
     openCutPathsCount: openCutCount,
     zeroLengthPathsCount: zeroLengthCount,
     duplicatePathsCount: duplicateCount,

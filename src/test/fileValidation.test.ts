@@ -37,6 +37,40 @@ describe('File Validation and Security', () => {
     expect(result.error).toContain('Unsafe active content')
   })
 
+  it('rejects SVGs with mouseover and click attributes', async () => {
+    const attrSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <circle cx="50" cy="50" r="20" onmouseover="stealTokens()" />
+    </svg>`
+    const blob = new Blob([attrSvg], { type: 'image/svg+xml' })
+
+    const result = await validateDesignFile(blob, 'mouseover.svg')
+    expect(result.valid).toBe(false)
+    expect(result.error).toContain('Unsafe active content')
+  })
+
+  it('rejects SVGs with foreignObject or disallowed embedded tags', async () => {
+    const foreignSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <foreignObject width="100" height="100">
+        <div>hello</div>
+      </foreignObject>
+    </svg>`
+    const blob = new Blob([foreignSvg], { type: 'image/svg+xml' })
+
+    const result = await validateDesignFile(blob, 'foreign.svg')
+    expect(result.valid).toBe(false)
+  })
+
+  it('rejects SVGs containing external remote network references', async () => {
+    const remoteSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <use href="https://malicious.example.com/asset.svg#icon" />
+    </svg>`
+    const blob = new Blob([remoteSvg], { type: 'image/svg+xml' })
+
+    const result = await validateDesignFile(blob, 'remote.svg')
+    expect(result.valid).toBe(false)
+    expect(result.error).toContain('external reference')
+  })
+
   it('rejects SVGs containing external entity declarations', async () => {
     const xxeSvg = `<!DOCTYPE svg [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
     <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">

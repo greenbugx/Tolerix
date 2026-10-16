@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateJsonReport, generateHtmlReport } from '../lib/reports/reportService'
+import { generateJsonReport, generateHtmlReport, escapeHtml } from '../lib/reports/reportService'
 import type { FullAuditReportData } from '../lib/reports/reportService'
 
 describe('Report Generation', () => {
@@ -82,5 +82,41 @@ describe('Report Generation', () => {
     expect(htmlStr).toContain('Custom Tag Batch')
     expect(htmlStr).toContain('Width mismatch')
     expect(htmlStr).toContain('Thunder Laser Nova 35')
+  })
+
+  it('strictly escapes HTML in all user and audit fields to prevent injection', () => {
+    expect(escapeHtml('<script>alert("xss")</script>')).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;')
+    expect(escapeHtml('Tom & Jerry "Special"')).toBe('Tom &amp; Jerry &quot;Special&quot;')
+
+    const maliciousData: FullAuditReportData = {
+      ...sampleData,
+      job: {
+        ...sampleData.job,
+        name: '<script>alert("hacked")</script>',
+        customerName: '<img src=x onerror=alert(1)>'
+      },
+      findings: [
+        {
+          id: 'fnd-xss',
+          auditRunId: 'run-rep-1',
+          ruleId: 'RULE_XSS',
+          category: 'dimension',
+          severity: 'high',
+          title: '<b onmouseover="alert(1)">Evil Title</b>',
+          description: '<iframe src="javascript:alert(1)"></iframe>',
+          verificationStatus: 'issue',
+          reviewStatus: 'needs_review',
+          createdAt: Date.now()
+        }
+      ]
+    }
+
+    const html = generateHtmlReport(maliciousData)
+    expect(html).not.toContain('<script>alert("hacked")</script>')
+    expect(html).toContain('&lt;script&gt;alert(&quot;hacked&quot;)&lt;/script&gt;')
+    expect(html).not.toContain('<img src=x')
+    expect(html).toContain('&lt;img src=x')
+    expect(html).not.toContain('<iframe src=')
+    expect(html).toContain('&lt;iframe')
   })
 })

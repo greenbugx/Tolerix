@@ -1,12 +1,16 @@
-import { SVGPathData } from 'svg-pathdata'
+import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata'
 import { parseSvgLength } from './svgUnits'
 import {
-  IDENTITY_MATRIX,
   multiplyMatrices,
-  applyMatrixToPoint,
   parseSvgTransform,
   type Matrix2D
 } from './svgTransforms'
+
+export interface NormalizedPoint {
+  type: number
+  x: number
+  y: number
+}
 
 export interface ParsedPath {
   id: string
@@ -19,6 +23,7 @@ export interface ParsedPath {
   isZeroLength: boolean
   boundsMm: { minX: number; minY: number; maxX: number; maxY: number }
   pointsCount: number
+  normalizedPoints: NormalizedPoint[]
 }
 
 export interface ParsedSvgDocument {
@@ -50,7 +55,7 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
       .split(/[\s,]+/)
       .map(parseFloat)
       .filter(Number.isFinite)
-    if (parts.length >= 4) {
+    if (parts.length >= 4 && parts[2] > 0 && parts[3] > 0) {
       viewBox = { minX: parts[0], minY: parts[1], width: parts[2], height: parts[3] }
     }
   }
@@ -62,12 +67,28 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
     scaleX = parsedWidth.mmValue / viewBox.width
   } else if (parsedWidth) {
     scaleX = parsedWidth.unit === 'mm' ? 1 : parsedWidth.mmValue / parsedWidth.value
+  } else if (viewBox && viewBox.width > 0) {
+    scaleX = 25.4 / 96
   }
 
   if (parsedHeight && viewBox && viewBox.height > 0) {
     scaleY = parsedHeight.mmValue / viewBox.height
   } else if (parsedHeight) {
     scaleY = parsedHeight.unit === 'mm' ? 1 : parsedHeight.mmValue / parsedHeight.value
+  } else if (viewBox && viewBox.height > 0) {
+    scaleY = 25.4 / 96
+  }
+
+  let viewBoxMatrix: Matrix2D = [scaleX, 0, 0, scaleY, 0, 0]
+  if (viewBox) {
+    viewBoxMatrix = [
+      scaleX,
+      0,
+      0,
+      scaleY,
+      -viewBox.minX * scaleX,
+      -viewBox.minY * scaleY
+    ]
   }
 
   const paths: ParsedPath[] = []
@@ -143,18 +164,28 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
     if (!d.trim()) return
 
     try {
-      const pathData = new SVGPathData(d).toAbs()
-      let minX = Infinity
-      let minY = Infinity
-      let maxX = -Infinity
-      let maxY = -Infinity
-      let pointsCount = 0
+      const pathData = new SVGPathData(d)
+        .toAbs()
+        .transform(SVGPathDataTransformer.A_TO_C())
+        .transform(SVGPathDataTransformer.QT_TO_C())
+        .transform(SVGPathDataTransformer.NORMALIZE_HVZ())
+        .transform(
+          SVGPathDataTransformer.MATRIX(
+            currentMatrix[0],
+            currentMatrix[1],
+            currentMatrix[2],
+            currentMatrix[3],
+            currentMatrix[4],
+            currentMatrix[5]
+          )
+        )
+
+      const bounds = pathData.getBounds()
+      const normalizedPoints: NormalizedPoint[] = []
+
       let isClosed = false
       let startPoint: { x: number; y: number } | null = null
       let lastPoint: { x: number; y: number } | null = null
-
-      let curX = 0
-      let curY = 0
 
       for (const cmd of pathData.commands) {
         if (cmd.type === SVGPathData.CLOSE_PATH) {
@@ -162,38 +193,30 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
           continue
         }
 
-        if ('x' in cmd && typeof cmd.x === 'number') {
-          curX = cmd.x
+        if ('x' in cmd && 'y' in cmd && typeof cmd.x === 'number' && typeof cmd.y === 'number') {
+          if (startPoint === null) {
+            startPoint = { x: cmd.x, y: cmd.y }
+          }
+          lastPoint = { x: cmd.x, y: cmd.y }
+          normalizedPoints.push({
+            type: cmd.type,
+            x: Math.round(cmd.x * 100) / 100,
+            y: Math.round(cmd.y * 100) / 100
+          })
         }
-        if ('y' in cmd && typeof cmd.y === 'number') {
-          curY = cmd.y
-        }
-
-        const transformed = applyMatrixToPoint(currentMatrix, curX, curY)
-        const mmX = transformed.x * scaleX
-        const mmY = transformed.y * scaleY
-
-        if (startPoint === null) {
-          startPoint = { x: mmX, y: mmY }
-        }
-        lastPoint = { x: mmX, y: mmY }
-
-        minX = Math.min(minX, mmX)
-        minY = Math.min(minY, mmY)
-        maxX = Math.max(maxX, mmX)
-        maxY = Math.max(maxY, mmY)
-        pointsCount++
       }
 
       if (!isClosed && startPoint && lastPoint) {
         const dx = Math.abs(startPoint.x - lastPoint.x)
         const dy = Math.abs(startPoint.y - lastPoint.y)
-        if (dx < 0.05 && dy < 0.05 && pointsCount > 2) {
+        if (dx < 0.05 && dy < 0.05 && normalizedPoints.length > 2) {
           isClosed = true
         }
       }
 
-      const isZeroLength = pointsCount <= 1 || (Math.abs(maxX - minX) < 0.001 && Math.abs(maxY - minY) < 0.001)
+      const width = bounds.maxX - bounds.minX
+      const height = bounds.maxY - bounds.minY
+      const isZeroLength = normalizedPoints.length <= 1 || (Math.abs(width) < 0.001 && Math.abs(height) < 0.001)
 
       paths.push({
         id: node.getAttribute('id') || `path-${paths.length + 1}`,
@@ -205,12 +228,13 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
         isClosed,
         isZeroLength,
         boundsMm: {
-          minX: Number.isFinite(minX) ? minX : 0,
-          minY: Number.isFinite(minY) ? minY : 0,
-          maxX: Number.isFinite(maxX) ? maxX : 0,
-          maxY: Number.isFinite(maxY) ? maxY : 0
+          minX: Number.isFinite(bounds.minX) ? bounds.minX : 0,
+          minY: Number.isFinite(bounds.minY) ? bounds.minY : 0,
+          maxX: Number.isFinite(bounds.maxX) ? bounds.maxX : 0,
+          maxY: Number.isFinite(bounds.maxY) ? bounds.maxY : 0
         },
-        pointsCount
+        pointsCount: normalizedPoints.length,
+        normalizedPoints
       })
     } catch {
       unsupportedElements.push('complex-path-parse-failure')
@@ -218,12 +242,24 @@ export function parseSvgContent(svgText: string): ParsedSvgDocument {
   }
 
   for (const child of Array.from(svgEl.children)) {
-    traverseNode(child, IDENTITY_MATRIX, 'default')
+    traverseNode(child, viewBoxMatrix, 'default')
   }
 
+  const declaredCanvasWidthMm = parsedWidth
+    ? parsedWidth.mmValue
+    : viewBox
+    ? viewBox.width * scaleX
+    : null
+
+  const declaredCanvasHeightMm = parsedHeight
+    ? parsedHeight.mmValue
+    : viewBox
+    ? viewBox.height * scaleY
+    : null
+
   return {
-    declaredCanvasWidthMm: parsedWidth ? parsedWidth.mmValue : (viewBox ? viewBox.width * scaleX : null),
-    declaredCanvasHeightMm: parsedHeight ? parsedHeight.mmValue : (viewBox ? viewBox.height * scaleY : null),
+    declaredCanvasWidthMm,
+    declaredCanvasHeightMm,
     viewBox,
     viewBoxToMmScaleX: scaleX,
     viewBoxToMmScaleY: scaleY,

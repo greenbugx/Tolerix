@@ -42,7 +42,11 @@ export const MODELS: Record<string, ModelDescriptor> = {
 export const LITERT_WASM_PATH = '/runtime/litert'
 
 export function getModelDescriptor(id: string): ModelDescriptor {
-  return MODELS[id] || GEMMA_4B
+  const descriptor = MODELS[id]
+  if (!descriptor) {
+    throw new Error(`Unknown model identifier: "${id}". Supported models: ${Object.keys(MODELS).join(', ')}.`)
+  }
+  return descriptor
 }
 
 export function formatBytes(bytes: number | null | undefined): string {

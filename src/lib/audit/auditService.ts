@@ -1,9 +1,10 @@
-import { jobRepository } from '../db/repositories/jobs'
-import { fileRepository } from '../db/repositories/files'
-import { machineProfileRepository } from '../db/repositories/machineProfiles'
-import { auditRepository } from '../db/repositories/audits'
+import { jobRepository, JobRepository } from '../db/repositories/jobs'
+import { fileRepository, FileRepository } from '../db/repositories/files'
+import { machineProfileRepository, MachineProfileRepository } from '../db/repositories/machineProfiles'
+import { auditRepository, AuditRepository } from '../db/repositories/audits'
 import { analyzeSvgGeometry, type GeometryAnalysisResult } from '../geometry/geometryAnalysis'
 import { evaluateAuditRules } from './rules'
+import { readBlobAsText } from '../files/fileValidation'
 import type { AuditRun, Finding } from '../validation/schemas'
 
 export interface PreflightAuditResult {
@@ -13,30 +14,46 @@ export interface PreflightAuditResult {
 }
 
 export class AuditService {
+  private jobRepo: JobRepository
+  private fileRepo: FileRepository
+  private machineRepo: MachineProfileRepository
+  private auditRepo: AuditRepository
+
+  constructor(
+    jobRepo: JobRepository = jobRepository,
+    fileRepo: FileRepository = fileRepository,
+    machineRepo: MachineProfileRepository = machineProfileRepository,
+    auditRepo: AuditRepository = auditRepository
+  ) {
+    this.jobRepo = jobRepo
+    this.fileRepo = fileRepo
+    this.machineRepo = machineRepo
+    this.auditRepo = auditRepo
+  }
+
   async runAudit(jobId: string, modelIdUsed?: string): Promise<PreflightAuditResult> {
-    const job = await jobRepository.getById(jobId)
+    const job = await this.jobRepo.getById(jobId)
     if (!job) {
       throw new Error(`Job ${jobId} not found.`)
     }
 
-    const spec = await jobRepository.getSpecification(jobId)
+    const spec = await this.jobRepo.getSpecification(jobId)
     if (!spec) {
       throw new Error(`Job specification for ${jobId} not found.`)
     }
 
-    const designFile = await fileRepository.getByJobId(jobId)
+    const designFile = await this.fileRepo.getByJobId(jobId)
     if (!designFile) {
       throw new Error(`Uploaded design file for ${jobId} not found.`)
     }
 
     const profile =
-      (await machineProfileRepository.getById(job.selectedMachineProfileId)) ??
-      (await machineProfileRepository.getDefault())
+      (await this.machineRepo.getById(job.selectedMachineProfileId)) ??
+      (await this.machineRepo.getDefault())
     if (!profile) {
       throw new Error('No machine profile available.')
     }
-
-    const svgText = await designFile.blob.text()
+    const svgText = await readBlobAsText(designFile.blob)
     const geometry = analyzeSvgGeometry(svgText)
 
     const auditRunId = `audit-${Date.now()}`
@@ -71,10 +88,10 @@ export class AuditService {
       unverifiedCount
     }
 
-    await auditRepository.createAuditRun(run, findings)
+    await this.auditRepo.createAuditRun(run, findings)
 
     const newStatus = issueCount > 0 ? 'needs_review' : warningCount > 0 ? 'needs_review' : 'ready'
-    await jobRepository.update(jobId, {
+    await this.jobRepo.update(jobId, {
       lastAuditedAt: run.completedAt,
       status: newStatus,
       workflowStage: 'analysis'

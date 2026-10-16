@@ -28,7 +28,9 @@ export async function isModelCached(modelId: string): Promise<boolean> {
   if (!cache) return false
   const descriptor = getModelDescriptor(modelId)
   const match = await cache.match(new Request(descriptor.url))
-  return match !== undefined
+  if (!match) return false
+  const verifiedLength = Number(match.headers.get('x-tolerix-verified-bytes'))
+  return Number.isFinite(verifiedLength) && verifiedLength > 0
 }
 
 export async function cachedModelBytes(modelId: string): Promise<number | null> {
@@ -37,10 +39,9 @@ export async function cachedModelBytes(modelId: string): Promise<number | null> 
   const descriptor = getModelDescriptor(modelId)
   const response = await cache.match(new Request(descriptor.url))
   if (!response) return null
-  const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > 0) return declared
-  const buffer = await response.clone().arrayBuffer()
-  return buffer.byteLength
+  const verifiedLength = Number(response.headers.get('x-tolerix-verified-bytes'))
+  if (Number.isFinite(verifiedLength) && verifiedLength > 0) return verifiedLength
+  return null
 }
 
 export async function removeCachedModel(modelId: string): Promise<void> {
@@ -92,6 +93,13 @@ export async function downloadModel(
       receivedBytes += chunk.byteLength
       onProgress({ receivedBytes, totalBytes })
       controller.enqueue(chunk)
+    },
+    flush() {
+      if (totalBytes > 0 && receivedBytes < totalBytes) {
+        throw new ModelDownloadError(
+          `The model download was truncated: received ${receivedBytes} of ${totalBytes} bytes.`
+        )
+      }
     }
   })
 
@@ -101,7 +109,7 @@ export async function downloadModel(
       new Response(response.body.pipeThrough(tracker), {
         headers: {
           'content-type': 'application/octet-stream',
-          'content-length': String(totalBytes)
+          'x-tolerix-verified-bytes': String(totalBytes)
         }
       })
     )
@@ -122,7 +130,13 @@ export async function openCachedModelStream(
   const cache = await openModelCache()
   if (!cache) return null
   const descriptor = getModelDescriptor(modelId)
-  const response = await cache.match(new Request(descriptor.url))
+  const cacheKey = new Request(descriptor.url)
+  const response = await cache.match(cacheKey)
   if (!response?.body) return null
+  const verifiedLength = Number(response.headers.get('x-tolerix-verified-bytes'))
+  if (!Number.isFinite(verifiedLength) || verifiedLength <= 0) {
+    await cache.delete(cacheKey)
+    return null
+  }
   return response.body
 }

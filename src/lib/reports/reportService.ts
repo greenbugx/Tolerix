@@ -16,6 +16,16 @@ export interface FullAuditReportData {
   findings: Finding[]
 }
 
+export function escapeHtml(str: string | number | null | undefined): string {
+  if (str === null || str === undefined) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export function generateJsonReport(data: FullAuditReportData): string {
   return JSON.stringify(
     {
@@ -45,13 +55,13 @@ export function generateHtmlReport(data: FullAuditReportData): string {
     .map(
       (f) => `
     <tr style="border-bottom: 1px solid #e5dcd3;">
-      <td style="padding: 10px; font-weight: 500;">${f.title}</td>
+      <td style="padding: 10px; font-weight: 500;">${escapeHtml(f.title)}</td>
       <td style="padding: 10px; text-transform: uppercase; font-size: 11px; font-weight: 600; color: ${
         f.severity === 'high' ? '#b91c1c' : f.severity === 'medium' ? '#b45309' : '#047857'
-      };">${f.severity}</td>
-      <td style="padding: 10px;">${f.expectedValue ?? '-'}</td>
-      <td style="padding: 10px;">${f.detectedValue ?? '-'}</td>
-      <td style="padding: 10px; font-size: 12px; color: #57534e;">${f.description}</td>
+      };">${escapeHtml(f.severity)}</td>
+      <td style="padding: 10px;">${escapeHtml(f.expectedValue ?? '-')}</td>
+      <td style="padding: 10px;">${escapeHtml(f.detectedValue ?? '-')}</td>
+      <td style="padding: 10px; font-size: 12px; color: #57534e;">${escapeHtml(f.description)}</td>
     </tr>
   `
     )
@@ -61,7 +71,7 @@ export function generateHtmlReport(data: FullAuditReportData): string {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Tolerix Audit Report - ${data.job.name}</title>
+  <title>Tolerix Audit Report - ${escapeHtml(data.job.name)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #faf7f4; color: #111827; margin: 0; padding: 40px; }
     .card { background: #ffffff; border: 1px solid #e5dcd3; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -75,22 +85,22 @@ export function generateHtmlReport(data: FullAuditReportData): string {
 <body>
   <div class="card">
     <h1>Tolerix Pre-Production Audit Report</h1>
-    <p style="margin: 0; color: #78716c; font-size: 13px;">Generated on ${new Date().toLocaleString()}</p>
+    <p style="margin: 0; color: #78716c; font-size: 13px;">Generated on ${escapeHtml(new Date().toLocaleString())}</p>
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px; font-size: 12px;">
-      <div><strong>Job Name:</strong> ${data.job.name}</div>
-      <div><strong>Customer:</strong> ${data.job.customerName}</div>
-      <div><strong>Status:</strong> ${data.job.status}</div>
-      <div><strong>Machine Profile:</strong> ${data.profile?.name ?? 'Default'}</div>
+      <div><strong>Job Name:</strong> ${escapeHtml(data.job.name)}</div>
+      <div><strong>Customer:</strong> ${escapeHtml(data.job.customerName)}</div>
+      <div><strong>Status:</strong> ${escapeHtml(data.job.status)}</div>
+      <div><strong>Machine Profile:</strong> ${escapeHtml(data.profile?.name ?? 'Default')}</div>
     </div>
   </div>
 
   <div class="card">
     <h2>Audit Summary</h2>
     <div style="display: flex; gap: 24px; font-size: 14px;">
-      <div>Issues: <strong>${data.run?.issueCount ?? 0}</strong></div>
-      <div>Warnings: <strong>${data.run?.warningCount ?? 0}</strong></div>
-      <div>Passed: <strong>${data.run?.passedCount ?? 0}</strong></div>
-      <div>Unverified: <strong>${data.run?.unverifiedCount ?? 0}</strong></div>
+      <div>Issues: <strong>${escapeHtml(data.run?.issueCount ?? 0)}</strong></div>
+      <div>Warnings: <strong>${escapeHtml(data.run?.warningCount ?? 0)}</strong></div>
+      <div>Passed: <strong>${escapeHtml(data.run?.passedCount ?? 0)}</strong></div>
+      <div>Unverified: <strong>${escapeHtml(data.run?.unverifiedCount ?? 0)}</strong></div>
     </div>
   </div>
 
@@ -128,5 +138,7 @@ export function triggerDownload(content: string, filename: string, mimeType: str
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 15000)
 }

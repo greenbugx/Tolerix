@@ -8,18 +8,67 @@ export interface FileValidationResult {
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 
-const UNSAFE_PATTERNS = [
+const RAW_UNSAFE_PATTERNS = [
   /<script[\s>]/i,
   /<\/script>/i,
   /javascript\s*:/i,
+  /vbscript\s*:/i,
   /data\s*:\s*text\/html/i,
   /\bon\w+\s*=/i,
   /<!ENTITY/i,
   /SYSTEM\s+["'][^"']+["']/i,
+  /PUBLIC\s+["'][^"']+["']/i,
   /<foreignObject[\s>]/i,
-  /xlink:href\s*=\s*["']https?:\/\//i
+  /<iframe[\s>]/i,
+  /<object[\s>]/i,
+  /<embed[\s>]/i,
+  /<applet[\s>]/i,
+  /<meta[\s>]/i,
+  /<link[\s>]/i,
+  /href\s*=\s*["']https?:\/\//i,
+  /xlink:href\s*=\s*["']https?:\/\//i,
+  /href\s*=\s*["']\/\//i,
+  /xlink:href\s*=\s*["']\/\//i
 ]
 
+const ALLOWED_ELEMENTS = new Set([
+  'svg',
+  'g',
+  'path',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'text',
+  'tspan',
+  'defs',
+  'clippath',
+  'mask',
+  'title',
+  'desc',
+  'metadata',
+  'lineargradient',
+  'radialgradient',
+  'stop'
+])
+
+export async function readBlobAsText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') {
+    return blob.text()
+  }
+  if (typeof blob.arrayBuffer === 'function') {
+    const buffer = await blob.arrayBuffer()
+    return new TextDecoder().decode(buffer)
+  }
+  const { promise, resolve, reject } = Promise.withResolvers<string>()
+  const reader = new FileReader()
+  reader.onload = () => resolve((reader.result as string) || '')
+  reader.onerror = () => reject(reader.error)
+  reader.readAsText(blob)
+  return promise
+}
 export async function computeSha256(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer()
   const digest = await crypto.subtle.digest('SHA-256', buffer)
@@ -46,9 +95,9 @@ export async function validateDesignFile(file: File | Blob, filename: string): P
   const lowerName = filename.toLowerCase()
 
   if (lowerName.endsWith('.svg')) {
-    const text = await file.text()
+    const text = await readBlobAsText(file)
 
-    for (const pattern of UNSAFE_PATTERNS) {
+    for (const pattern of RAW_UNSAFE_PATTERNS) {
       if (pattern.test(text)) {
         return {
           valid: false,
@@ -73,6 +122,7 @@ export async function validateDesignFile(file: File | Blob, filename: string): P
           warnings
         }
       }
+
       if (doc.documentElement.nodeName.toLowerCase() !== 'svg') {
         return {
           valid: false,
@@ -80,6 +130,66 @@ export async function validateDesignFile(file: File | Blob, filename: string): P
           sha256,
           error: 'Root XML element is not <svg>.',
           warnings
+        }
+      }
+
+      const allElements = doc.querySelectorAll('*')
+      for (const el of Array.from(allElements)) {
+        const tagName = el.tagName.toLowerCase()
+        if (!ALLOWED_ELEMENTS.has(tagName)) {
+          return {
+            valid: false,
+            format: 'svg',
+            sha256,
+            error: `Disallowed SVG element <${tagName}> detected.`,
+            warnings
+          }
+        }
+
+        for (const attr of Array.from(el.attributes)) {
+          const attrName = attr.name.toLowerCase()
+          const attrValue = attr.value.trim().toLowerCase()
+
+          if (attrName.startsWith('on')) {
+            return {
+              valid: false,
+              format: 'svg',
+              sha256,
+              error: `Disallowed event handler attribute "${attr.name}".`,
+              warnings
+            }
+          }
+
+          if (
+            attrValue.includes('javascript:') ||
+            attrValue.includes('vbscript:') ||
+            attrValue.includes('data:text/html')
+          ) {
+            return {
+              valid: false,
+              format: 'svg',
+              sha256,
+              error: `Disallowed script scheme in attribute "${attr.name}".`,
+              warnings
+            }
+          }
+
+          if (attrName === 'href' || attrName === 'xlink:href') {
+            if (
+              attrValue.startsWith('http:') ||
+              attrValue.startsWith('https:') ||
+              attrValue.startsWith('//') ||
+              attrValue.startsWith('ftp:')
+            ) {
+              return {
+                valid: false,
+                format: 'svg',
+                sha256,
+                error: 'External network resource references are forbidden in manufacturing files.',
+                warnings
+              }
+            }
+          }
         }
       }
     }

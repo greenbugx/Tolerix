@@ -152,7 +152,39 @@ export function evaluateAuditRules(
     })
   }
 
-  if (geo.parsedDoc.paths.length > 0) {
+  if (geo.ambiguousPathsCount > 0) {
+    findings.push({
+      id: `fnd-${findings.length + 1}`,
+      auditRunId,
+      ruleId: 'RULE_LAYER_AMBIGUOUS',
+      category: 'layer',
+      severity: 'medium',
+      title: 'Ambiguous operation layers detected',
+      description: `Found ${geo.ambiguousPathsCount} path(s) with unrecognized layer names or stroke assignments that cannot be deterministically classified as cutting or engraving.`,
+      detectedValue: `${geo.ambiguousPathsCount} ambiguous paths`,
+      verificationStatus: 'unverified',
+      reviewStatus: 'needs_review',
+      resolutionNotes: 'Assign paths to explicit cut or engrave layers in vector editor.',
+      createdAt: now
+    })
+  }
+
+  if (geo.parsedDoc.unsupportedElements.length > 0) {
+    findings.push({
+      id: `fnd-${findings.length + 1}`,
+      auditRunId,
+      ruleId: 'RULE_SVG_VALID',
+      category: 'geometry',
+      severity: 'medium',
+      title: 'Unsupported geometry features detected',
+      description: `File contains unsupported SVG elements: ${geo.parsedDoc.unsupportedElements.join(', ')}. Geometry cannot be fully validated deterministically.`,
+      detectedValue: `${geo.parsedDoc.unsupportedElements.length} unsupported elements`,
+      verificationStatus: 'unverified',
+      reviewStatus: 'needs_review',
+      resolutionNotes: 'Convert complex effects, clips, or meshes into standard vector paths.',
+      createdAt: now
+    })
+  } else if (geo.parsedDoc.paths.length > 0) {
     findings.push({
       id: `fnd-${findings.length + 1}`,
       auditRunId,
