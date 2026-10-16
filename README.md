@@ -6,6 +6,20 @@ Tolerix is an AI-assisted manufacturing preflight web application designed for s
 
 It bridges the gap between what a customer requests and the actual vector drawing file prepared for manufacturing, calculating geometric discrepancies deterministically and generating an evidence-backed pre-production audit report.
 
+## Screenshots
+
+### Landing Page
+![Tolerix Landing Page](docs/landing-page.png)
+
+### Production Dashboard
+![Tolerix Production Dashboard](docs/dashboard.png)
+
+### Machine Profile Configuration
+![Tolerix Machine Profiles](docs/machine-profiles.png)
+
+### On-Device Model & Hardware Settings
+![Tolerix Workspace & Model Settings](docs/settings.png)
+
 ## Architecture
 
 Tolerix operates on a strict local-first architecture. There is no remote backend, hosted database, cloud sync, or external API dependency.
